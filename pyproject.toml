@@ -9,6 +9,8 @@ python = "^3.9"
 pandas = "^1.4.0"
 SQLAlchemy = "^1.4.31"
 decouple = "^0.0.7"
+psycopg2 = "^2.9.3"
+apache-airflow = "^2.2.0"
 
 [tool.poetry.dev-dependencies]
 

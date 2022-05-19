@@ -1,0 +1,97 @@
+version: "3"
+
+services:
+  postgres:
+    image: postgres:13
+    environment:
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8"
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: UTC
+    volumes:
+      - postgres-db-volume:/var/lib/postgresql/data
+    expose:
+      - ${POSTGRES_PORT}
+    ports:
+      - ${POSTGRES_PORT}:5432
+    networks:
+      - project-network
+    restart: always
+
+  waitfor-postgres-db:
+    image: dadarek/wait-for-dependencies
+    depends_on:
+      - postgres
+    command: postgres:5432
+    networks:
+      - project-network
+
+  scheduler:
+    build: .
+    command: poetry run airflow scheduler
+    restart: on-failure
+    depends_on:
+      - postgres
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: 0
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 1
+      AIRFLOW__SCHEDULER__SCHEDULER_HEARTBEAT_SEC: 10
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/${POSTGRES_DB}"
+      TZ: UTC
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ./scripts:/opt/airflow/scripts
+      - ~/.google/credentials/:/.google/credentials
+    networks:
+      - project-network
+
+  webserver:
+    build: .
+    entrypoint: bash ./entrypoints/start_airflow_webserver.sh
+    restart: on-failure
+    depends_on:
+      - postgres
+      - scheduler
+    environment:
+      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      AIRFLOW__CORE__LOAD_EXAMPLES: 0
+      AIRFLOW__CORE__DAGS_ARE_PAUSED_AT_CREATION: 1
+      AIRFLOW__CORE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:${POSTGRES_PORT}/${POSTGRES_DB}"
+      AIRFLOW__WEBSERVER__INSTANCE_NAME: ${COMPOSE_PROJECT_NAME}
+      AIRFLOW__WEBSERVER__WEB_SERVER_PORT: ${AIRFLOW_PORT}
+      AIRFLOW_CREATE_USER_CONN: ${AIRFLOW_CREATE_USER_CONN}
+      AIRFLOW_EMAIL: ${AIRFLOW_EMAIL}
+      AIRFLOW_FIRST: ${AIRFLOW_FIRST}
+      AIRFLOW_LAST: ${AIRFLOW_LAST}
+      AIRFLOW_USER: ${AIRFLOW_USER}
+      AIRFLOW_PASSWORD: ${AIRFLOW_PASSWORD}
+      AIRFLOW_ROLE: ${AIRFLOW_ROLE}
+      TZ: UTC
+    volumes:
+      - ./dags:/opt/airflow/dags
+      - ./logs:/opt/airflow/logs
+      - ./plugins:/opt/airflow/plugins
+      - ~/.google/credentials/:/.google/credentials:ro
+      - ./entrypoints:/opt/airflow/entrypoints
+    user: "${AIRFLOW_UID:-50000}:0"
+    ports:
+      - ${AIRFLOW_PORT}:${AIRFLOW_PORT}
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "[ -f /home/airflow/airflow-webserver.pid ]"
+        ]
+      interval: 30s
+      timeout: 30s
+      retries: 3
+
+volumes:
+  postgres-db-volume:
+
+
+networks:
+  project-network:
